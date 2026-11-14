@@ -5,8 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>3D Interactive Moon App</title>
     <style>
-        body {
+        html, body {
             margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             overflow: hidden;
             background-color: #010103;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -105,13 +108,24 @@
             border: 1px solid #222;
             text-align: center;
         }
+        #error-banner {
+            display: none;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(180, 30, 30, 0.95);
+            color: #fff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            z-index: 20;
+            max-width: 320px;
+        }
     </style>
-    <!-- Include Three.js and OrbitControls -->
-    <script src="https://cloudflare.com"></script>
-    <script src="https://jsdelivr.net"></script>
 </head>
 <body>
     <div id="canvas-container"></div>
+    <div id="error-banner"></div>
 
     <div id="info-panel">
         <h1>LUNAR TELEMETRY</h1>
@@ -154,365 +168,409 @@
         Drag to rotate | Scroll to zoom | Click on Moon or Enter Coordinates | Watch shadows shift!
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
     <script>
-        // --- Three.js Setup ---
-        const container = document.getElementById('canvas-container');
-        const scene = new THREE.Scene();
-
-        // Camera
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 5, 28);
-
-        // Renderer
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.shadowMap.enabled = true;
-        container.appendChild(renderer.domElement);
-
-        // Controls
-        const controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.minDistance = 5.0;
-        controls.maxDistance = 60;
-
-        // Lights
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.08);
-        scene.add(ambientLight);
-
-        const sunLight = new THREE.DirectionalLight(0xffffff, 1.6);
-        sunLight.castShadow = true;
-        sunLight.shadow.mapSize.width = 1024;
-        sunLight.shadow.mapSize.height = 1024;
-        scene.add(sunLight);
-
-        // Helper to draw seamless circles on canvas
-        function drawSeamlessCircle(ctx, x, y, r, fillStyle, width) {
-            ctx.fillStyle = fillStyle;
-            const offsets = [-width, 0, width];
-            for (let ox of offsets) {
-                ctx.beginPath();
-                ctx.arc(x + ox, y, r, 0, Math.PI * 2);
-                ctx.fill();
-            }
+        function showError(msg) {
+            const banner = document.getElementById('error-banner');
+            banner.style.display = 'block';
+            banner.innerText = msg;
         }
 
-        // Helper to draw seamless radial gradients
-        function drawSeamlessRadialGradient(ctx, x, y, r, stops, width) {
-            const offsets = [-width, 0, width];
-            for (let ox of offsets) {
-                const grad = ctx.createRadialGradient(x + ox, y, 0, x + ox, y, r);
-                for (let stop of stops) {
-                    grad.addColorStop(stop.offset, stop.color);
-                }
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(x + ox, y, r, 0, Math.PI * 2);
-                ctx.fill();
-            }
-        }
+        window.onerror = function(message) {
+            showError("App Error: " + message);
+        };
 
-        // --- Procedural Textures ---
-        function createMoonTexture() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 1024;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
+        if (typeof THREE === 'undefined') {
+            showError("Three.js failed to load. Check your internet connection or iframe script permissions.");
+        } else {
+            const container = document.getElementById('canvas-container');
+            const scene = new THREE.Scene();
 
-            // Gray background base
-            ctx.fillStyle = '#83838b';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            const width = container.clientWidth || window.innerWidth || 800;
+            const height = container.clientHeight || window.innerHeight || 600;
 
-            // Seamless Dark Lunar Maria
-            for (let i = 0; i < 12; i++) {
-                const x = Math.random() * w;
-                const y = Math.random() * canvas.height;
-                const rx = Math.random() * 150 + 60;
-                const ry = Math.random() * 100 + 40;
-                const maxR = Math.max(rx, ry);
+            const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+            camera.position.set(0, 5, 28);
 
-                const stops = [
-                    { offset: 0, color: '#424248' },
-                    { offset: 0.6, color: '#56565e' },
-                    { offset: 1, color: 'transparent' }
-                ];
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(width, height);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
 
+            const controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 5.0;
+            controls.maxDistance = 60;
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 1024;
+            sunLight.shadow.mapSize.height = 1024;
+            scene.add(sunLight);
+
+            function drawSeamlessCircle(ctx, x, y, r, fillStyle, w) {
+                ctx.fillStyle = fillStyle;
                 const offsets = [-w, 0, w];
                 for (let ox of offsets) {
-                    ctx.save();
-                    ctx.translate(x + ox, y);
-                    ctx.rotate(Math.random() * Math.PI);
-                    ctx.scale(rx / ry, 1);
-                    
-                    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
+                    ctx.beginPath();
+                    ctx.arc(x + ox, y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function drawSeamlessRadialGradient(ctx, x, y, r, stops, w) {
+                const offsets = [-w, 0, w];
+                for (let ox of offsets) {
+                    const grad = ctx.createRadialGradient(x + ox, y, 0, x + ox, y, r);
                     for (let stop of stops) {
                         grad.addColorStop(stop.offset, stop.color);
                     }
                     ctx.fillStyle = grad;
                     ctx.beginPath();
-                    ctx.arc(0, 0, ry, 0, Math.PI * 2);
+                    ctx.arc(x + ox, y, r, 0, Math.PI * 2);
                     ctx.fill();
-                    ctx.restore();
                 }
             }
 
-            // Seamless Micro craters
-            for (let i = 0; i < 350; i++) {
-                const x = Math.random() * w;
-                const y = Math.random() * canvas.height;
-                const r = Math.random() * 12 + 1.5;
+            function createMoonTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
 
-                drawSeamlessCircle(ctx, x, y, r, 'rgba(28, 28, 30, 0.45)', w);
-                drawSeamlessCircle(ctx, x + r * 0.12, y + r * 0.12, r * 0.88, 'rgba(185, 185, 195, 0.28)', w);
+                ctx.fillStyle = '#8b8b94';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                for (let i = 0; i < 12; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * canvas.height;
+                    const rx = Math.random() * 150 + 60;
+                    const ry = Math.random() * 100 + 40;
+
+                    const stops = [
+                        { offset: 0, color: '#424248' },
+                        { offset: 0.6, color: '#56565e' },
+                        { offset: 1, color: 'transparent' }
+                    ];
+
+                    const offsets = [-w, 0, w];
+                    for (let ox of offsets) {
+                        ctx.save();
+                        ctx.translate(x + ox, y);
+                        ctx.rotate(Math.random() * Math.PI);
+                        ctx.scale(rx / ry, 1);
+
+                        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
+                        for (let stop of stops) {
+                            grad.addColorStop(stop.offset, stop.color);
+                        }
+                        ctx.fillStyle = grad;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, ry, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }
+
+                for (let i = 0; i < 350; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * canvas.height;
+                    const r = Math.random() * 12 + 1.5;
+
+                    drawSeamlessCircle(ctx, x, y, r, 'rgba(28, 28, 30, 0.45)', w);
+                    drawSeamlessCircle(ctx, x + r * 0.12, y + r * 0.12, r * 0.88, 'rgba(185, 185, 195, 0.28)', w);
+                }
+                return new THREE.CanvasTexture(canvas);
             }
-            return new THREE.CanvasTexture(canvas);
+
+            function createMoonBumpMap() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
+
+                ctx.fillStyle = '#808080';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                for (let i = 0; i < 500; i++) {
+                    const x = Math.random() * w;
+                    const y = Math.random() * canvas.height;
+                    const r = Math.random() * 18 + 1;
+
+                    const stops = [
+                        { offset: 0, color: '#000000' },
+                        { offset: 0.85, color: '#ffffff' },
+                        { offset: 1, color: '#808080' }
+                    ];
+                    drawSeamlessRadialGradient(ctx, x, y, r, stops, w);
+                }
+                return new THREE.CanvasTexture(canvas);
+            }
+
+            function createEarthTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1024;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width;
+
+                ctx.fillStyle = '#1c3b66';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                for (let i = 0; i < 45; i++) {
+                    const cx = Math.random() * w;
+                    const cy = Math.random() * canvas.height;
+                    const cr = Math.random() * 140 + 40;
+
+                    const coastalStops = [
+                        { offset: 0, color: '#2e5c2e' },
+                        { offset: 0.5, color: '#224422' },
+                        { offset: 0.8, color: '#1e3554' },
+                        { offset: 1, color: 'transparent' }
+                    ];
+                    drawSeamlessRadialGradient(ctx, cx, cy, cr, coastalStops, w);
+
+                    const innerStops = [
+                        { offset: 0, color: '#a68c5b' },
+                        { offset: 0.5, color: '#3a5f2e' },
+                        { offset: 1, color: 'transparent' }
+                    ];
+                    drawSeamlessRadialGradient(ctx, cx, cy, cr * 0.6, innerStops, w);
+                }
+
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
+                for (let i = 0; i < 12; i++) {
+                    const cx = Math.random() * w;
+                    const cy = Math.random() * canvas.height;
+                    const cw = Math.random() * 180 + 50;
+                    const ch = Math.random() * 30 + 8;
+                    const angle = (Math.random() * 0.4 - 0.2);
+
+                    const offsets = [-w, 0, w];
+                    for (let ox of offsets) {
+                        ctx.save();
+                        ctx.translate(cx + ox, cy);
+                        ctx.rotate(angle);
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, cw, ch, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }
+                return new THREE.CanvasTexture(canvas);
+            }
+
+            function createSunTexture() {
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 256;
+                const ctx = canvas.getContext('2d');
+
+                const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                grad.addColorStop(0, '#ff9d3a');
+                grad.addColorStop(0.5, '#ff6a00');
+                grad.addColorStop(1, '#cc4400');
+
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                return new THREE.CanvasTexture(canvas);
+            }
+
+            const EARTH_RADIUS = 8.5;
+            const MOON_RADIUS = 2.32;
+
+            const geometry = new THREE.SphereGeometry(MOON_RADIUS, 64, 64);
+            const material = new THREE.MeshStandardMaterial({
+                map: createMoonTexture(),
+                bumpMap: createMoonBumpMap(),
+                bumpScale: 0.16,
+                roughness: 0.9,
+                metalness: 0.05
+            });
+
+            const moon = new THREE.Mesh(geometry, material);
+            moon.receiveShadow = true;
+            moon.castShadow = true;
+            scene.add(moon);
+
+            const earthGeometry = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
+            const earthMaterial = new THREE.MeshStandardMaterial({
+                map: createEarthTexture(),
+                roughness: 0.65,
+                metalness: 0.1
+            });
+            const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+            earth.position.set(-22, 4, -18);
+            scene.add(earth);
+
+            const sunGeometry = new THREE.SphereGeometry(2.3, 32, 32);
+            const sunMaterial = new THREE.MeshBasicMaterial({
+                map: createSunTexture()
+            });
+            const sunVisual = new THREE.Mesh(sunGeometry, sunMaterial);
+            scene.add(sunVisual);
+
+            const markerGeometry = new THREE.ConeGeometry(0.12, 0.4, 8);
+            markerGeometry.rotateX(Math.PI / 2); 
+            const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+            const marker = new THREE.Mesh(markerGeometry, markerMaterial);
+            marker.visible = false;
+            moon.add(marker);
+
+            const starsGeometry = new THREE.BufferGeometry();
+            const starsCount = 1500;
+            const starsPositions = new Float32Array(starsCount * 3);
+            for (let i = 0; i < starsCount; i++) {
+                const u = Math.random();
+                const v = Math.random();
+                const theta = u * 2.0 * Math.PI;
+                const phi = Math.acos(2.0 * v - 1.0);
+                const r = 180 + Math.random() * 40;
+
+                starsPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                starsPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                starsPositions[i * 3 + 2] = r * Math.cos(phi);
+            }
+            starsGeometry.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
+            const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.6, sizeAttenuation: true });
+            const starField = new THREE.Points(starsGeometry, starsMaterial);
+            scene.add(starField);
+
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            const statusVal = document.getElementById('status-val');
+            const coordsVal = document.getElementById('coords-val');
+            const dayTempVal = document.getElementById('day-temp-val');
+            const nightTempVal = document.getElementById('night-temp-val');
+            const dayRadVal = document.getElementById('day-rad-val');
+            const nightRadVal = document.getElementById('night-rad-val');
+
+            function updateTelemetry(lat, lon, localPoint) { 
+                statusVal.innerText = "LOCKED";
+                statusVal.style.color = "#00ffcc";
+                coordsVal.innerText = `${lat.toFixed(2)}° N, ${lon.toFixed(2)}° E`;
+
+                const latRad = lat * (Math.PI / 180);
+                const latFactor = Math.cos(latRad);
+
+                const dayTemp = 120 * latFactor;
+                const nightTemp = -130 - (40 * (1 - latFactor));
+
+                dayTempVal.innerText = `${dayTemp.toFixed(1)} °C`;
+                nightTempVal.innerText = `${nightTemp.toFixed(1)} °C`;
+
+                const baseCosmicRad = 11.2;
+                const radFluctuation = Math.abs(Math.sin(latRad * 4.5)) * 4.2;
+
+                const nightRad = baseCosmicRad + radFluctuation;
+                const dayRad = nightRad + 8.5; 
+
+                dayRadVal.innerText = `${dayRad.toFixed(2)} μSv/h`;
+                nightRadVal.innerText = `${nightRad.toFixed(2)} μSv/h`;
+
+                const markerPos = localPoint.clone().multiplyScalar(MOON_RADIUS + 0.15);
+                marker.position.copy(markerPos);
+                marker.lookAt(new THREE.Vector3(0, 0, 0)); 
+                marker.visible = true;
+            }
+
+            let targetRotationY = 0;
+            let targetRotationX = 0;
+            let isInterpolating = false;
+
+            function focusOnPoint(localPoint) {
+                targetRotationY = Math.atan2(-localPoint.x, localPoint.z);
+                targetRotationX = Math.asin(localPoint.y);
+                isInterpolating = true;
+            }
+
+            window.navigateToInputCoords = function() {
+                let lat = parseFloat(document.getElementById('lat-input').value);
+                let lon = parseFloat(document.getElementById('lon-input').value);
+
+                if (isNaN(lat) || lat < -90 || lat > 90) lat = 0;
+                if (isNaN(lon) || lon < -180 || lon > 180) lon = 0;
+
+                const phi = (90 - lat) * (Math.PI / 180);
+                const theta = (lon + 180) * (Math.PI / 180);
+
+                const x = -(Math.sin(phi) * Math.sin(theta));
+                const y = Math.cos(phi);
+                const z = Math.sin(phi) * Math.cos(theta);
+
+                const localPoint = new THREE.Vector3(x, y, z).normalize();
+                updateTelemetry(lat, lon, localPoint);
+                focusOnPoint(localPoint);
+            };
+
+            renderer.domElement.addEventListener('click', function(event) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera); 
+                const intersects = raycaster.intersectObject(moon);
+
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+                    const localPoint = moon.worldToLocal(point.clone()).normalize();
+
+                    const latitude = Math.asin(localPoint.y) * (180 / Math.PI);
+                    const longitude = Math.atan2(localPoint.z, localPoint.x) * (180 / Math.PI);
+
+                    updateTelemetry(latitude, longitude, localPoint);
+                }
+            }, false);
+
+            let time = 0.8;
+            function animate() {
+                requestAnimationFrame(animate);
+                time += 0.0012;
+
+                const sunX = Math.cos(time) * 45;
+                const sunZ = Math.sin(time) * 45;
+                sunLight.position.set(sunX, 6, sunZ);
+                sunVisual.position.set(sunX, 6, sunZ);
+
+                sunVisual.rotation.y -= 0.0025;
+                earth.rotation.y += 0.0015;
+
+                if (isInterpolating) {
+                    moon.rotation.y += (targetRotationY - moon.rotation.y) * 0.05;
+                    moon.rotation.x += (targetRotationX - moon.rotation.x) * 0.05;
+
+                    if (Math.abs(moon.rotation.y - targetRotationY) < 0.002 &&
+                        Math.abs(moon.rotation.x - targetRotationX) < 0.002) {
+                        isInterpolating = false;
+                    }
+                } else {
+                    moon.rotation.y += 0.0004;
+                }
+
+                controls.update();
+                renderer.render(scene, camera);
+            }
+
+            window.addEventListener('resize', () => {
+                const w = container.clientWidth || window.innerWidth;
+                const h = container.clientHeight || window.innerHeight;
+                camera.aspect = w / h;
+                camera.updateProjectionMatrix();
+                renderer.setSize(w, h);
+            });
+
+            animate();
         }
-
-        function createMoonBumpMap() {
-            const canvas = document.createElement('canvas');
-            canvas.width = 1024;
-            canvas.height = 512;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-
-            ctx.fillStyle = '#808080';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            // Seamless bump map craters
-
-for (let i = 0; i < 500; i++) {
-const x = Math.random() * w;
-const y = Math.random() * canvas.height;
-const r = Math.random() * 18 + 1;
-const stops = [
-{ offset: 0, color: '#000000' },
-{ offset: 0.85, color: '#ffffff' },
-{ offset: 1, color: '#808080' }
-];
-drawSeamlessRadialGradient(ctx, x, y, r, stops, w);
-}
-return new THREE.CanvasTexture(canvas);
-}
-function createEarthTexture() {
-const canvas = document.createElement('canvas');
-canvas.width = 1024;
-canvas.height = 512;
-const ctx = canvas.getContext('2d');
-const w = canvas.width;
-// Dull, realistic ocean base color
-ctx.fillStyle = '#1c2d42';
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-// Create Continent shapes with seamless transitions
-for (let i = 0; i < 45; i++) {
-const cx = Math.random() * w;
-const cy = Math.random() * canvas.height;
-const cr = Math.random() * 140 + 40;
-const coastalStops = [
-{ offset: 0, color: '#2e4c2e' },
-{ offset: 0.5, color: '#223822' },
-{ offset: 0.8, color: '#1e2b3d' },
-{ offset: 1, color: 'transparent' }
-];
-drawSeamlessRadialGradient(ctx, cx, cy, cr, coastalStops, w);
-const innerStops = [
-{ offset: 0, color: '#a68c5b' },
-{ offset: 0.5, color: '#3a4f2e' },
-{ offset: 1, color: 'transparent' }
-];
-drawSeamlessRadialGradient(ctx, cx, cy, cr * 0.6, innerStops, w);
-}
-// Few seamless clouds
-ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
-for (let i = 0; i < 12; i++) {
-const cx = Math.random() * w;
-const cy = Math.random() * canvas.height;
-const cw = Math.random() * 180 + 50;
-const ch = Math.random() * 30 + 8;
-const angle = (Math.random() * 0.4 - 0.2);
-const offsets = [-w, 0, w];
-for (let ox of offsets) {
-ctx.save();
-ctx.translate(cx + ox, cy);
-ctx.rotate(angle);
-ctx.beginPath();
-ctx.ellipse(0, 0, cw, ch, 0, 0, Math.PI * 2);
-ctx.fill();
-ctx.restore();
-}
-}
-return new THREE.CanvasTexture(canvas);
-}
-function createSunTexture() {
-const canvas = document.createElement('canvas');
-canvas.width = 512;
-canvas.height = 256;
-const ctx = canvas.getContext('2d');
-// Monotone warm orange color scheme with smooth linear sunset-like gradient
-const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-grad.addColorStop(0, '#ff7d1a');
-grad.addColorStop(0.5, '#e65c00');
-grad.addColorStop(1, '#cc4400');
-ctx.fillStyle = grad;
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-return new THREE.CanvasTexture(canvas);
-}
-// --- Set up Mesh Objects ---
-// Earth-to-Moon radius ratio is approximately 3.67 to 1
-const EARTH_RADIUS = 8.5;
-const MOON_RADIUS = 2.32;
-// Interactive Moon sphere
-const geometry = new THREE.SphereGeometry(MOON_RADIUS, 64, 64);
-const material = new THREE.MeshStandardMaterial({
-map: createMoonTexture(),
-bumpMap: createMoonBumpMap(),
-bumpScale: 0.16,
-roughness: 0.92,
-metalness: 0.08
-});
-const moon = new THREE.Mesh(geometry, material);
-moon.receiveShadow = true;
-moon.castShadow = true;
-scene.add(moon);
-// Background Earth sphere (scaled relative to Moon's interactive focus)
-const earthGeometry = new THREE.SphereGeometry(EARTH_RADIUS, 64, 64);
-const earthMaterial = new THREE.MeshStandardMaterial({
-map: createEarthTexture(),
-roughness: 0.65,
-metalness: 0.1
-});
-const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-earth.position.set(-28, 4, -18);
-scene.add(earth);
-// Glowing Monotone Orange Sun sphere
-const sunGeometry = new THREE.SphereGeometry(2.3, 32, 32);
-const sunMaterial = new THREE.MeshBasicMaterial({
-map: createSunTexture()
-});
-const sunVisual = new THREE.Mesh(sunGeometry, sunMaterial);
-scene.add(sunVisual);
-// Navigation Marker
-const markerGeometry = new THREE.ConeGeometry(0.12, 0.4, 8);
-markerGeometry.rotateX(Math.PI / 2);
-const markerMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
-const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-marker.visible = false;
-moon.add(marker);
-// Deep space Stars
-const starsGeometry = new THREE.BufferGeometry();
-const starsCount = 1500;
-const starsPositions = new Float32Array(starsCount * 3);
-for (let i = 0; i < starsCount; i++) {
-const u = Math.random();
-const v = Math.random();
-const theta = u * 2.0 * Math.PI;
-const phi = Math.acos(2.0 * v - 1.0);
-const r = 180 + Math.random() * 40;
-starsPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
-starsPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-starsPositions[i * 3 + 2] = r * Math.cos(phi);
-}
-starsGeometry.setAttribute('position', new THREE.BufferAttribute(starsPositions, 3));
-const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.6, sizeAttenuation: true });
-const starField = new THREE.Points(starsGeometry, starsMaterial);
-scene.add(starField);
-// --- Telemetry Interaction Logic ---
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-const statusVal = document.getElementById('status-val');
-const coordsVal = document.getElementById('coords-val');
-const dayTempVal = document.getElementById('day-temp-val');
-const nightTempVal = document.getElementById('night-temp-val');
-const dayRadVal = document.getElementById('day-rad-val');
-const nightRadVal = document.getElementById('night-rad-val');
-window.addEventListener('click', onPointerDown, false);
-function updateTelemetry(lat, lon, localPoint) {
-statusVal.innerText = "LOCKED";
-statusVal.style.color = "#00ffcc";
-coordsVal.innerText = ${lat.toFixed(2)}° N, ${lon.toFixed(2)}° E;
-// Generate physical dynamic values
-const latRad = lat * (Math.PI / 180);
-const latFactor = Math.cos(latRad);
-const dayTemp = 120 * latFactor;
-const nightTemp = -130 - (40 * (1 - latFactor));
-dayTempVal.innerText = ${dayTemp.toFixed(1)} °C;
-nightTempVal.innerText = ${nightTemp.toFixed(1)} °C;
-const baseCosmicRad = 11.2;
-const radFluctuation = Math.abs(Math.sin(latRad * 4.5)) * 4.2;
-const nightRad = baseCosmicRad + radFluctuation;
-const dayRad = nightRad + 8.5;
-dayRadVal.innerText = ${dayRad.toFixed(2)} μSv/h;
-nightRadVal.innerText = ${nightRad.toFixed(2)} μSv/h;
-const markerPos = localPoint.clone().multiplyScalar(MOON_RADIUS);
-marker.position.copy(markerPos);
-marker.lookAt(new THREE.Vector3(0, 0, 0));
-marker.visible = true;
-}
-let targetRotationY = 0;
-let targetRotationX = 0;
-let isInterpolating = false;
-function focusOnPoint(localPoint) {
-targetRotationY = Math.atan2(-localPoint.x, localPoint.z);
-targetRotationX = Math.asin(localPoint.y);
-isInterpolating = true;
-}
-function navigateToInputCoords() {
-let lat = parseFloat(document.getElementById('lat-input').value);
-let lon = parseFloat(document.getElementById('lon-input').value);
-if (isNaN(lat) || lat < -90 || lat > 90) lat = 0;
-if (isNaN(lon) || lon < -180 || lon > 180) lon = 0;
-const phi = (90 - lat) * (Math.PI / 180);
-const theta = (lon + 180) * (Math.PI / 180);
-const x = -(Math.sin(phi) * Math.sin(theta));
-const y = Math.cos(phi);
-const z = Math.sin(phi) * Math.cos(theta);
-const localPoint = new THREE.Vector3(x, y, z).normalize();
-updateTelemetry(lat, lon, localPoint);
-focusOnPoint(localPoint);
-}
-function onPointerDown(event) {
-if (event.clientX < 340 && event.clientY < 450) return;
-mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-raycaster.setFromCamera(mouse, camera);
-const intersects = raycaster.intersectObject(moon);
-if (intersects.length > 0) {
-const point = intersects[0].point;
-const localPoint = moon.worldToLocal(point.clone());
-localPoint.normalize();
-const latitude = Math.asin(localPoint.y) * (180 / Math.PI);
-const longitude = Math.atan2(localPoint.z, localPoint.x) * (180 / Math.PI);
-updateTelemetry(latitude, longitude, localPoint);
-}
-}
-// --- Render Animation ---
-let time = 0;
-function animate() {
-requestAnimationFrame(animate);
-time += 0.0012;
-const sunX = Math.cos(time) * 45;
-const sunZ = Math.sin(time) * 45;
-sunLight.position.set(sunX, 6, sunZ);
-sunVisual.position.set(sunX, 6, sunZ);
-sunVisual.rotation.y -= 0.0025;
-earth.rotation.y += 0.0015;
-if (isInterpolating) {
-moon.rotation.y += (targetRotationY - moon.rotation.y) * 0.05;
-moon.rotation.x += (targetRotationX - moon.rotation.x) * 0.05;
-if (Math.abs(moon.rotation.y - targetRotationY) < 0.002 &&
-Math.abs(moon.rotation.x - targetRotationX) < 0.002) {
-isInterpolating = false;
-}
-} else {
-moon.rotation.y += 0.0004;
-}
-controls.update();
-renderer.render(scene, camera);
-}
-window.addEventListener('resize', () => {
-camera.aspect = window.innerWidth / window.innerHeight;
-camera.updateProjectionMatrix();
-renderer.setSize(window.innerWidth, window.innerHeight);
-});
-animate();
+    </script>
+</body>
+</html>
