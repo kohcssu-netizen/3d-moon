@@ -9,17 +9,33 @@
       padding: 0;
       width: 100%;
       height: 100%;
+      min-height: 450px;
       overflow: hidden;
       background-color: #05070f;
       font-family: Arial, sans-serif;
     }
     #canvas-container {
-      width: 100vw;
-      height: 100vh;
+      width: 100%;
+      height: 100%;
+      min-height: 450px;
       cursor: grab;
+      display: block;
     }
     #canvas-container:active {
       cursor: grabbing;
+    }
+    #status-banner {
+      display: none;
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      background: rgba(180, 40, 40, 0.9);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      z-index: 30;
+      max-width: 80%;
     }
     #tooltip {
       display: none;
@@ -100,10 +116,14 @@
       pointer-events: none;
     }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <!-- Load Three.js with automatic fallback CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"
+          onerror="this.onerror=null;this.src='https://unpkg.com/three@0.128.0/build/three.min.js';"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"
+          onerror="this.onerror=null;this.src='https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js';"></script>
 </head>
 <body>
+  <div id="status-banner"></div>
   <div id="canvas-container"></div>
   <div id="hint">Drag to rotate &bull; Scroll to zoom &bull; Click a pin</div>
   <div id="tooltip"></div>
@@ -116,267 +136,394 @@
   </div>
 
   <script>
-    // 1. EDIT YOUR COORDINATES & ADD YOUR GOOGLE SITES PAGE URLS HERE
-    const moonLocations = [
-      {
-        name: "Apollo 11 (Tranquility Base)",
-        lat: 0.67416,
-        lng: 23.47314,
-        description: "Site of the first crewed lunar landing on July 20, 1969.",
-        pageUrl: "https://sites.google.com/view/your-site/apollo-11",
-        buttonText: "Explore Apollo 11",
-        color: 0xff5555
-      },
-      {
-        name: "Tycho Crater",
-        lat: -43.31,
-        lng: -11.36,
-        description: "A prominent 85 km wide impact crater in the southern lunar highlands.",
-        pageUrl: "https://sites.google.com/view/your-site/tycho",
-        buttonText: "Explore Tycho Crater",
-        color: 0x63b3ed
-      },
-      {
-        name: "Copernicus Crater",
-        lat: 9.62,
-        lng: -20.08,
-        description: "A massive 93 km wide crater in eastern Oceanus Procellarum.",
-        pageUrl: "https://sites.google.com/view/your-site/copernicus",
-        buttonText: "Explore Copernicus",
-        color: 0x63b3ed
-      },
-      {
-        name: "Shackleton Crater (South Pole)",
-        lat: -89.9,
-        lng: 0.0,
-        description: "A crater at the lunar south pole containing permanently shadowed water ice.",
-        pageUrl: "https://sites.google.com/view/your-site/south-pole",
-        buttonText: "Explore South Pole",
-        color: 0x68d391
+    function showError(msg) {
+      const banner = document.getElementById('status-banner');
+      banner.style.display = 'block';
+      banner.innerText = msg;
+    }
+
+    // Procedural fallback cratered lunar texture (guaranteed to render even if external image CDNs are blocked)
+    function createProceduralMoonTextures() {
+      const width = 1024;
+      const height = 512;
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      // Base regolith grey
+      ctx.fillStyle = '#9a9a9a';
+      ctx.fillRect(0, 0, width, height);
+
+      // Deterministic pseudo-random generator
+      let seed = 42;
+      function rand() {
+        seed = (seed * 1664525 + 1013904223) % 4294967296;
+        return seed / 4294967296;
       }
-    ];
 
-    // 2. INITIALIZE SCENE, CAMERA & RENDERER
-    const container = document.getElementById('canvas-container');
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.z = 3.2;
+      // Dark lunar maria (basalt plains)
+      const maria = [
+        { x: 0.56, y: 0.42, rx: 95, ry: 75 },
+        { x: 0.48, y: 0.36, rx: 75, ry: 60 },
+        { x: 0.63, y: 0.48, rx: 65, ry: 55 },
+        { x: 0.38, y: 0.45, rx: 110, ry: 85 },
+        { x: 0.72, y: 0.40, rx: 50, ry: 45 }
+      ];
+      maria.forEach(m => {
+        const grad = ctx.createRadialGradient(m.x * width, m.y * height, 10, m.x * width, m.y * height, m.rx);
+        grad.addColorStop(0, 'rgba(65, 68, 74, 0.72)');
+        grad.addColorStop(0.7, 'rgba(75, 78, 84, 0.45)');
+        grad.addColorStop(1, 'rgba(154, 154, 154, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.ellipse(m.x * width, m.y * height, m.rx, m.ry, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+      });
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-    container.appendChild(renderer.domElement);
+      // Surface grain & speckles
+      for (let i = 0; i < 6000; i++) {
+        const x = rand() * width;
+        const y = rand() * height;
+        const shade = Math.floor(110 + rand() * 80);
+        ctx.fillStyle = `rgba(${shade},${shade},${shade},0.22)`;
+        ctx.fillRect(x, y, 2, 2);
+      }
 
-    // 3. BRIGHT REALISTIC LIGHTING
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
-    scene.add(ambientLight);
+      // Craters with bright rims and shadowed interiors
+      for (let i = 0; i < 320; i++) {
+        const cx = rand() * width;
+        const cy = rand() * height;
+        const r = 2 + Math.pow(rand(), 2.6) * 26;
 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    sunLight.position.set(5, 2, 5);
-    scene.add(sunLight);
+        // Rim highlight
+        ctx.strokeStyle = 'rgba(220, 220, 220, 0.35)';
+        ctx.lineWidth = Math.max(1, r * 0.12);
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.stroke();
 
-    // 4. LOAD NASA LRO MOON TEXTURES (WITH SAFE GREY BASE COLOR FALLBACK)
-    const textureLoader = new THREE.TextureLoader();
-    textureLoader.setCrossOrigin('anonymous');
+        // Crater floor
+        const cGrad = ctx.createRadialGradient(cx - r * 0.2, cy - r * 0.2, r * 0.1, cx, cy, r);
+        cGrad.addColorStop(0, 'rgba(75, 75, 80, 0.55)');
+        cGrad.addColorStop(0.85, 'rgba(115, 115, 120, 0.35)');
+        cGrad.addColorStop(1, 'rgba(180, 180, 180, 0.15)');
+        ctx.fillStyle = cGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-    const moonRadius = 1;
-    const moonGeometry = new THREE.SphereGeometry(moonRadius, 64, 64);
-    const moonMaterial = new THREE.MeshStandardMaterial({
-      color: 0xd0d0d0,
-      roughness: 0.9,
-      metalness: 0.02
-    });
+      const tex = new THREE.CanvasTexture(canvas);
+      return tex;
+    }
 
-    // NASA Scientific Visualization Studio LRO Color & Elevation Maps
-    const colorMapUrl = 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/17271/lroc_color_poles_1k.jpg';
-    const bumpMapUrl = 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/17271/ldem_3_8bit.jpg';
+    function initMoonGlobe() {
+      if (typeof THREE === 'undefined') {
+        showError('Error: Three.js library failed to load. Check your network or iframe sandbox settings.');
+        return;
+      }
 
-    textureLoader.load(
-      colorMapUrl,
-      function (tex) {
+      // 1. EDIT YOUR COORDINATES & ADD YOUR GOOGLE SITES PAGE URLS HERE
+      const moonLocations = [
+        {
+          name: "Apollo 11 (Tranquility Base)",
+          lat: 0.67416,
+          lng: 23.47314,
+          description: "Site of the first crewed lunar landing on July 20, 1969.",
+          pageUrl: "https://sites.google.com/view/your-site/apollo-11",
+          buttonText: "Explore Apollo 11",
+          color: 0xff5555
+        },
+        {
+          name: "Tycho Crater",
+          lat: -43.31,
+          lng: -11.36,
+          description: "A prominent 85 km wide impact crater in the southern lunar highlands.",
+          pageUrl: "https://sites.google.com/view/your-site/tycho",
+          buttonText: "Explore Tycho Crater",
+          color: 0x63b3ed
+        },
+        {
+          name: "Copernicus Crater",
+          lat: 9.62,
+          lng: -20.08,
+          description: "A massive 93 km wide crater in eastern Oceanus Procellarum.",
+          pageUrl: "https://sites.google.com/view/your-site/copernicus",
+          buttonText: "Explore Copernicus",
+          color: 0x63b3ed
+        },
+        {
+          name: "Shackleton Crater (South Pole)",
+          lat: -89.9,
+          lng: 0.0,
+          description: "A crater at the lunar south pole containing permanently shadowed water ice.",
+          pageUrl: "https://sites.google.com/view/your-site/south-pole",
+          buttonText: "Explore South Pole",
+          color: 0x68d391
+        }
+      ];
+
+      // 2. INITIALIZE SCENE, CAMERA & RENDERER (SAFE FOR ZERO-HEIGHT EMBED IFRAMES)
+      const container = document.getElementById('canvas-container');
+      const getWidth = () => container.clientWidth || window.innerWidth || 800;
+      const getHeight = () => container.clientHeight || window.innerHeight || 500;
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, getWidth() / getHeight(), 0.1, 1000);
+      camera.position.z = 3.2;
+
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'default' });
+      } catch (err) {
+        showError('WebGL is disabled or blocked in this browser/iframe.');
+        return;
+      }
+
+      renderer.setSize(getWidth(), getHeight());
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      container.appendChild(renderer.domElement);
+
+      // 3. BRIGHT REALISTIC LIGHTING
+      const ambientLight = new THREE.AmbientLight(0xffffff, 0.75);
+      scene.add(ambientLight);
+
+      const sunLight = new THREE.DirectionalLight(0xffffff, 1.05);
+      sunLight.position.set(5, 2, 5);
+      scene.add(sunLight);
+
+      // 4. CREATE MOON WITH INSTANT PROCEDURAL TEXTURE + LIVE NASA LRO UPGRADE
+      const moonRadius = 1;
+      const moonGeometry = new THREE.SphereGeometry(moonRadius, 64, 64);
+      const fallbackTexture = createProceduralMoonTextures();
+
+      const moonMaterial = new THREE.MeshStandardMaterial({
+        map: fallbackTexture,
+        bumpMap: fallbackTexture,
+        bumpScale: 0.015,
+        roughness: 0.9,
+        metalness: 0.02
+      });
+
+      const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
+      scene.add(moonMesh);
+
+      // Attempt to load high-res NASA LRO maps over the procedural base
+      const textureLoader = new THREE.TextureLoader();
+      textureLoader.setCrossOrigin('anonymous');
+
+      const colorMapUrl = 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/17271/lroc_color_poles_1k.jpg';
+      const bumpMapUrl = 'https://s3-us-west-2.amazonaws.com/s.cdpn.io/17271/ldem_3_8bit.jpg';
+
+      textureLoader.load(colorMapUrl, function (tex) {
         moonMaterial.map = tex;
-        moonMaterial.color.setHex(0xffffff);
         moonMaterial.needsUpdate = true;
-      }
-    );
+      });
 
-    textureLoader.load(
-      bumpMapUrl,
-      function (bump) {
+      textureLoader.load(bumpMapUrl, function (bump) {
         moonMaterial.bumpMap = bump;
         moonMaterial.bumpScale = 0.025;
         moonMaterial.needsUpdate = true;
-      }
-    );
+      });
 
-    const moonMesh = new THREE.Mesh(moonGeometry, moonMaterial);
-    scene.add(moonMesh);
+      // Subtle Latitude / Longitude Coordinate Grid Overlay
+      const gridGroup = new THREE.Group();
+      const gridMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14 });
 
-    // Subtle Latitude / Longitude Coordinate Grid Overlay
-    const gridGroup = new THREE.Group();
-    const gridMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.14 });
-
-    for (let lat = -60; lat <= 60; lat += 30) {
-      const points = [];
-      const phi = (90 - lat) * (Math.PI / 180);
-      for (let lng = 0; lng <= 360; lng += 5) {
-        const theta = lng * (Math.PI / 180);
-        points.push(new THREE.Vector3(
-          -(moonRadius + 0.003) * Math.sin(phi) * Math.cos(theta),
-          (moonRadius + 0.003) * Math.cos(phi),
-          (moonRadius + 0.003) * Math.sin(phi) * Math.sin(theta)
-        ));
-      }
-      gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMat));
-    }
-
-    for (let lng = 0; lng < 360; lng += 30) {
-      const points = [];
-      const theta = lng * (Math.PI / 180);
-      for (let lat = -90; lat <= 90; lat += 5) {
+      for (let lat = -60; lat <= 60; lat += 30) {
+        const points = [];
         const phi = (90 - lat) * (Math.PI / 180);
-        points.push(new THREE.Vector3(
-          -(moonRadius + 0.003) * Math.sin(phi) * Math.cos(theta),
-          (moonRadius + 0.003) * Math.cos(phi),
-          (moonRadius + 0.003) * Math.sin(phi) * Math.sin(theta)
-        ));
-      }
-      gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMat));
-    }
-    moonMesh.add(gridGroup);
-
-    // 5. STARFIELD BACKGROUND
-    const starGeometry = new THREE.BufferGeometry();
-    const starVertices = [];
-    for (let i = 0; i < 1500; i++) {
-      starVertices.push((Math.random() - 0.5) * 120);
-      starVertices.push((Math.random() - 0.5) * 120);
-      starVertices.push((Math.random() - 0.5) * 120);
-    }
-    starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-    const starMaterial = new THREE.PointsMaterial({
-      color: 0xffffff,
-      size: 0.16,
-      transparent: true,
-      opacity: 0.85
-    });
-    scene.add(new THREE.Points(starGeometry, starMaterial));
-
-    // 6. PLACE 3D CLICKABLE COORDINATE PINS
-    function latLngToVector3(lat, lng, radius) {
-      const phi = (90 - lat) * (Math.PI / 180);
-      const theta = (lng + 180) * (Math.PI / 180);
-      return new THREE.Vector3(
-        -(radius * Math.sin(phi) * Math.cos(theta)),
-        radius * Math.cos(phi),
-        radius * Math.sin(phi) * Math.sin(theta)
-      );
-    }
-
-    const pinMeshes = [];
-    moonLocations.forEach(loc => {
-      const pos = latLngToVector3(loc.lat, loc.lng, moonRadius + 0.015);
-      const pinGeo = new THREE.SphereGeometry(0.026, 16, 16);
-      const pinMat = new THREE.MeshBasicMaterial({ color: loc.color });
-      const pin = new THREE.Mesh(pinGeo, pinMat);
-      pin.position.copy(pos);
-      pin.userData = loc;
-
-      const haloGeo = new THREE.SphereGeometry(0.045, 16, 16);
-      const haloMat = new THREE.MeshBasicMaterial({ color: loc.color, transparent: true, opacity: 0.35 });
-      const halo = new THREE.Mesh(haloGeo, haloMat);
-      pin.add(halo);
-
-      moonMesh.add(pin);
-      pinMeshes.push(pin);
-    });
-
-    // 7. ORBIT CONTROLS & RAYCASTER CLICK/HOVER (OCCLUSION-AWARE)
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
-    controls.minDistance = 1.45;
-    controls.maxDistance = 6.5;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.5;
-
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-    const tooltip = document.getElementById('tooltip');
-    let pointerDownPos = { x: 0, y: 0 };
-
-    // Include moonMesh in raycast targets so pins on the far side of the Moon are occluded
-    const raycastTargets = [moonMesh, ...pinMeshes];
-
-    container.addEventListener('pointerdown', (e) => {
-      controls.autoRotate = false;
-      pointerDownPos = { x: e.clientX, y: e.clientY };
-    });
-
-    container.addEventListener('pointermove', (e) => {
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(raycastTargets, false);
-
-      if (intersects.length > 0 && intersects[0].object !== moonMesh) {
-        const data = intersects[0].object.userData;
-        tooltip.style.display = 'block';
-        tooltip.style.left = (e.clientX + 14) + 'px';
-        tooltip.style.top = (e.clientY + 14) + 'px';
-        tooltip.innerText = data.name;
-        container.style.cursor = 'pointer';
-      } else {
-        tooltip.style.display = 'none';
-        container.style.cursor = 'grab';
-      }
-    });
-
-    container.addEventListener('pointerup', (e) => {
-      const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
-      if (dist > 6) return;
-
-      const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(raycastTargets, false);
-
-      if (intersects.length > 0 && intersects[0].object !== moonMesh) {
-        const point = intersects[0].object.userData;
-        document.getElementById('info-title').innerText = point.name;
-        document.getElementById('info-coords').innerText = `Latitude: ${point.lat}° | Longitude: ${point.lng}°`;
-        document.getElementById('info-desc').innerText = point.description;
-
-        const linkBtn = document.getElementById('info-link');
-        if (point.pageUrl && point.pageUrl !== "") {
-          linkBtn.href = point.pageUrl;
-          linkBtn.innerText = (point.buttonText || "Open Page") + " →";
-          linkBtn.style.display = "inline-block";
-        } else {
-          linkBtn.style.display = "none";
+        for (let lng = 0; lng <= 360; lng += 5) {
+          const theta = lng * (Math.PI / 180);
+          points.push(new THREE.Vector3(
+            -(moonRadius + 0.003) * Math.sin(phi) * Math.cos(theta),
+            (moonRadius + 0.003) * Math.cos(phi),
+            (moonRadius + 0.003) * Math.sin(phi) * Math.sin(theta)
+          ));
         }
-        document.getElementById('info-panel').style.display = 'block';
+        gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMat));
       }
-    });
 
-    // 8. RESPONSIVE RESIZE & ANIMATION LOOP
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
+      for (let lng = 0; lng < 360; lng += 30) {
+        const points = [];
+        const theta = lng * (Math.PI / 180);
+        for (let lat = -90; lat <= 90; lat += 5) {
+          const phi = (90 - lat) * (Math.PI / 180);
+          points.push(new THREE.Vector3(
+            -(moonRadius + 0.003) * Math.sin(phi) * Math.cos(theta),
+            (moonRadius + 0.003) * Math.cos(phi),
+            (moonRadius + 0.003) * Math.sin(phi) * Math.sin(theta)
+          ));
+        }
+        gridGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), gridMat));
+      }
+      moonMesh.add(gridGroup);
 
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
+      // 5. STARFIELD BACKGROUND
+      const starGeometry = new THREE.BufferGeometry();
+      const starVertices = [];
+      for (let i = 0; i < 1500; i++) {
+        starVertices.push((Math.random() - 0.5) * 120);
+        starVertices.push((Math.random() - 0.5) * 120);
+        starVertices.push((Math.random() - 0.5) * 120);
+      }
+      starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+      const starMaterial = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.16,
+        transparent: true,
+        opacity: 0.85
+      });
+      scene.add(new THREE.Points(starGeometry, starMaterial));
+
+      // 6. PLACE 3D CLICKABLE COORDINATE PINS
+      function latLngToVector3(lat, lng, radius) {
+        const phi = (90 - lat) * (Math.PI / 180);
+        const theta = (lng + 180) * (Math.PI / 180);
+        return new THREE.Vector3(
+          -(radius * Math.sin(phi) * Math.cos(theta)),
+          radius * Math.cos(phi),
+          radius * Math.sin(phi) * Math.sin(theta)
+        );
+      }
+
+      const pinMeshes = [];
+      moonLocations.forEach(loc => {
+        const pos = latLngToVector3(loc.lat, loc.lng, moonRadius + 0.015);
+        const pinGeo = new THREE.SphereGeometry(0.026, 16, 16);
+        const pinMat = new THREE.MeshBasicMaterial({ color: loc.color });
+        const pin = new THREE.Mesh(pinGeo, pinMat);
+        pin.position.copy(pos);
+        pin.userData = loc;
+
+        const haloGeo = new THREE.SphereGeometry(0.045, 16, 16);
+        const haloMat = new THREE.MeshBasicMaterial({ color: loc.color, transparent: true, opacity: 0.35 });
+        const halo = new THREE.Mesh(haloGeo, haloMat);
+        pin.add(halo);
+
+        moonMesh.add(pin);
+        pinMeshes.push(pin);
+      });
+
+      // 7. ORBIT CONTROLS (WITH FALLBACK DRAG ROTATION) & OCCLUSION-AWARE RAYCASTER
+      let controls = null;
+      let isDraggingFallback = false;
+      let prevMouse = { x: 0, y: 0 };
+
+      if (typeof THREE.OrbitControls !== 'undefined') {
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.minDistance = 1.45;
+        controls.maxDistance = 6.5;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+      }
+
+      const raycaster = new THREE.Raycaster();
+      const mouse = new THREE.Vector2();
+      const tooltip = document.getElementById('tooltip');
+      let pointerDownPos = { x: 0, y: 0 };
+      const raycastTargets = [moonMesh, ...pinMeshes];
+
+      container.addEventListener('pointerdown', (e) => {
+        if (controls) controls.autoRotate = false;
+        isDraggingFallback = true;
+        prevMouse = { x: e.clientX, y: e.clientY };
+        pointerDownPos = { x: e.clientX, y: e.clientY };
+      });
+
+      container.addEventListener('pointermove', (e) => {
+        if (!controls && isDraggingFallback) {
+          moonMesh.rotation.y += (e.clientX - prevMouse.x) * 0.006;
+          moonMesh.rotation.x += (e.clientY - prevMouse.y) * 0.006;
+          prevMouse = { x: e.clientX, y: e.clientY };
+        }
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(raycastTargets, false);
+
+        if (intersects.length > 0 && intersects[0].object !== moonMesh) {
+          const data = intersects[0].object.userData;
+          tooltip.style.display = 'block';
+          tooltip.style.left = (e.clientX + 14) + 'px';
+          tooltip.style.top = (e.clientY + 14) + 'px';
+          tooltip.innerText = data.name;
+          container.style.cursor = 'pointer';
+        } else {
+          tooltip.style.display = 'none';
+          container.style.cursor = 'grab';
+        }
+      });
+
+      container.addEventListener('pointerup', (e) => {
+        isDraggingFallback = false;
+        const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+        if (dist > 6) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(raycastTargets, false);
+
+        if (intersects.length > 0 && intersects[0].object !== moonMesh) {
+          const point = intersects[0].object.userData;
+          document.getElementById('info-title').innerText = point.name;
+          document.getElementById('info-coords').innerText = `Latitude: ${point.lat}° | Longitude: ${point.lng}°`;
+          document.getElementById('info-desc').innerText = point.description;
+
+          const linkBtn = document.getElementById('info-link');
+          if (point.pageUrl && point.pageUrl !== "") {
+            linkBtn.href = point.pageUrl;
+            linkBtn.innerText = (point.buttonText || "Open Page") + " →";
+            linkBtn.style.display = "inline-block";
+          } else {
+            linkBtn.style.display = "none";
+          }
+          document.getElementById('info-panel').style.display = 'block';
+        }
+      });
+
+      // 8. RESPONSIVE RESIZE & ANIMATION LOOP (HANDLES DELAYED GOOGLE SITES IFRAME SIZING)
+      function handleResize() {
+        const w = getWidth();
+        const h = getHeight();
+        if (w > 0 && h > 0) {
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          renderer.setSize(w, h);
+        }
+      }
+
+      window.addEventListener('resize', handleResize);
+      setTimeout(handleResize, 150);
+      setTimeout(handleResize, 600);
+
+      function animate() {
+        requestAnimationFrame(animate);
+        if (controls) {
+          controls.update();
+        } else if (!isDraggingFallback) {
+          moonMesh.rotation.y += 0.0015;
+        }
+        renderer.render(scene, camera);
+      }
+
+      animate();
     }
 
-    animate();
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initMoonGlobe);
+    } else {
+      initMoonGlobe();
+    }
   </script>
 </body>
 </html>
